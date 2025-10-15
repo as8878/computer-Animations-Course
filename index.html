@@ -15,6 +15,31 @@
     video,iframe{width:100%;max-width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
     .note{color:var(--muted);font-size:14px;margin-top:8px}
     .card + .card {margin-top: 24px; }
+    .video-buttons {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.video-buttons button {
+  background-color: #1f2937;
+  color: #e5e7eb;
+  border: 1px solid #4b5563;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.video-buttons button:hover {
+  background-color: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
   </style>
 </head>
 <body>
@@ -44,6 +69,56 @@
         Your browser doesn’t support the video tag.
       </video>
     </section>
+
+    <section class="card">
+    <h1>Assignment 2: Billiards</h1>
+    <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
+    <h2>Video</h2>
+    <div class="video-buttons">
+  <button onclick="prevVideo()">⟵</button>
+  <button onclick="nextVideo()">⟶</button>
+    </div>
+  <div id="videoContainer">
+  <video controls preload="metadata" style="display: none;">
+    <source src="videoforass2a.mp4" type="video/mp4">
+  </video>
+  <video controls preload="metadata" style="display: none;">
+    <source src="videoforass2b.mp4" type="video/mp4">
+  </video>
+  <video controls preload="metadata" style="display: none;">
+    <source src="videoforass2c.mp4" type="video/mp4">
+  </video>
+  <video controls preload="metadata" style="display: none;">
+    <source src="videoforass2d.mp4" type="video/mp4">
+  </video>
+</div>
+</section>
+
   </main>
+
+  <script>
+  let currentVideo = 0;
+  const videos = document.querySelectorAll('#videoContainer video');
+
+  function showVideo(index) {
+    videos.forEach((vid, i) => {
+      vid.style.display = i === index ? 'block' : 'none';
+    });
+  }
+
+  function nextVideo() {
+    currentVideo = (currentVideo + 1) % videos.length;
+    showVideo(currentVideo);
+  }
+
+  function prevVideo() {
+    currentVideo = (currentVideo - 1 + videos.length) % videos.length;
+    showVideo(currentVideo);
+  }
+
+  // Initial setup
+  showVideo(currentVideo);
+</script>
+
 </body>
 </html>
