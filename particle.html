@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Particle System with Ground Bounce (Extra Credit)</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    color: #eee;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  #ui {
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.4;
+    background: #111;
+    border-bottom: 1px solid #333;
+  }
+  canvas {
+    flex: 1;
+    display: block;
+  }
+  .val {
+    font-weight: bold;
+    color: #6cf;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div>Particle Rate: <span id="rateVal" class="val"></span> /sec</div>
+  <div>Lifetime: <span id="lifeVal" class="val"></span> sec</div>
+  <div>Cone Angle: <span id="coneVal" class="val"></span> deg</div>
+  <div>Gravity: <span id="gravVal" class="val"></span></div>
+  <div>Particles Alive: <span id="countVal" class="val"></span></div>
+  <div>EXTRA: Ground bounce ON</div>
+</div>
+<canvas id="glcanvas"></canvas>
+
+<!-- Vertex Shader -->
+<script id="vs" type="x-shader/x-vertex">
+attribute vec3 a_pos;
+attribute vec3 a_color;
+attribute float a_alpha;
+
+uniform mat4 u_viewProj;
+uniform float u_pointSize;
+
+varying vec3 v_color;
+varying float v_alpha;
+
+void main() {
+    gl_Position = u_viewProj * vec4(a_pos, 1.0);
+    gl_PointSize = u_pointSize;
+    v_color = a_color;
+    v_alpha = a_alpha;
+}
+</script>
+
+<!-- Fragment Shader -->
+<script id="fs" type="x-shader/x-fragment">
+precision mediump float;
+varying vec3 v_color;
+varying float v_alpha;
+
+void main() {
+    // round, soft-edged glow point
+    vec2 coord = gl_PointCoord * 2.0 - 1.0;
+    float dist2 = dot(coord, coord);
+    if (dist2 > 1.0) {
+        discard;
+    }
+    float falloff = 1.0 - dist2;
+    gl_FragColor = vec4(v_color, v_alpha * falloff);
+}
+</script>
+
+<script>
+////////////////////////////////////////////////////////////////////////////////
+// 0. Config
+////////////////////////////////////////////////////////////////////////////////
+
+
+const CONFIG = {
+  generateRate: 200.0,
+  lifetimeMin: 0.8,
+  lifetimeMax: 1.5,
+  coneAngleDeg: 30.0,
+  initSpeedMin: 2.0,
+  initSpeedMax: 5.0,
+  spawnJitter: 0.05,
+
+  // make gravity stronger so particles fall fast
+  accel: [0.0, -5.0, 0.0],
+
+  // bright blue particles
+  baseColor: [0.4, 0.7, 1.0],
+  pointSize: 10.0,
+
+  // raise the floor so bounce happens onscreen
+  groundY: -2.0,
+
+  // make bounce more springy / visible
+  bounceDamping: 0.8
+};
+
+
+// comet path via keyframes; last == first so loop is seamless
+const leaderPath = [
+  { t: 0.0, pos: [ 0,  0,   0] },
+  { t: 2.0, pos: [ 3,  1,  -2] },
+  { t: 4.0, pos: [ 6,  0,   0] },
+  { t: 6.0, pos: [ 3, -1,   2] },
+  { t: 8.0, pos: [ 0,  0,   0] } // loop back to start
+];
+
+////////////////////////////////////////////////////////////////////////////////
+// 1. Math helpers
+////////////////////////////////////////////////////////////////////////////////
+function vec3(x=0,y=0,z=0){ return [x,y,z]; }
+function add3(a,b){ return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function sub3(a,b){ return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function scale3(a,s){ return [a[0]*s, a[1]*s, a[2]*s]; }
+function length3(a){
+  return Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+}
+function norm3(a){
+  const L = length3(a) || 1.0;
+  return [a[0]/L, a[1]/L, a[2]/L];
+}
+
+// pick random2direction within a cone around a given direction
+function randomDirInCone(dir, coneAngleDeg){
+  const coneAngleRad = coneAngleDeg * Math.PI / 180.0;
+
+  // spherical cap sampling
+  const cosMax = Math.cos(coneAngleRad);
+  const z = cosMax + (1.0 - cosMax) * Math.random();
+  const theta = Math.acos(z);
+  const phi = Math.random() * 2.0 * Math.PI;
+  const xs = Math.sin(theta)*Math.cos(phi);
+  const ys = Math.sin(theta)*Math.sin(phi);
+  const zs = Math.cos(theta);
+
+  const forward = norm3(dir);
+  const tmpUp = (Math.abs(forward[1]) < 0.99) ? [0,1,0] : [1,0,0];
+
+  // right = forward x tmpUp
+  let right = [
+    forward[1]*tmpUp[2] - forward[2]*tmpUp[1],
+    forward[2]*tmpUp[0] - forward[0]*tmpUp[2],
+    forward[0]*tmpUp[1] - forward[1]*tmpUp[0]
+  ];
+  right = norm3(right);
+
+  // up = right x forward
+  let up = [
+    right[1]*forward[2] - right[2]*forward[1],
+    right[2]*forward[0] - right[0]*forward[2],
+    right[0]*forward[1] - right[1]*forward[0]
+  ];
+  up = norm3(up);
+
+  // local cone coords -> world
+  return [
+    right[0]*xs + up[0]*ys + forward[0]*zs,
+    right[1]*xs + up[1]*ys + forward[1]*zs,
+    right[2]*xs + up[2]*ys + forward[2]*zs
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 2. Keyframe interpolation for comet path
+////////////////////////////////////////////////////////////////////////////////
+function getCometPos(globalTime){
+  const Ttotal = leaderPath[leaderPath.length-1].t;
+  let t = globalTime % Ttotal;
+
+  let k0 = leaderPath[0];
+  let k1 = leaderPath[leaderPath.length-1];
+  for (let i=0; i<leaderPath.length-1; i++){
+    if (t >= leaderPath[i].t && t <= leaderPath[i+1].t){
+      k0 = leaderPath[i];
+      k1 = leaderPath[i+1];
+      break;
+    }
+  }
+
+  const span = (k1.t - k0.t) || 1e-6;
+  const u = (t - k0.t) / span;
+  const p0 = k0.pos;
+  const p1 = k1.pos;
+  return [
+    p0[0] + u*(p1[0]-p0[0]),
+    p0[1] + u*(p1[1]-p0[1]),
+    p0[2] + u*(p1[2]-p0[2])
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 3. Particle class
+////////////////////////////////////////////////////////////////////////////////
+class Particle {
+  constructor(position, velocity, lifetime, mass, colorStart){
+    this.pos = position.slice();   // [x,y,z]
+    this.vel = velocity.slice();   // [vx,vy,vz]
+    this.life = lifetime;          // total allowed life
+    this.age = 0;                  // current age
+    this.mass = mass;
+    this.colorStart = colorStart;  // [r,g,b]
+  }
+
+  alive(){
+    return this.age < this.life;
+  }
+
+  alpha(){
+    const a = 1.0 - (this.age / this.life);
+    return (a > 0 ? a : 0.0);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 4. Particle System (with bounce)
+////////////////////////////////////////////////////////////////////////////////
+class ParticleSystem {
+  constructor(config){
+    this.config = config;
+    this.particles = [];
+    this.spawnCarry = 0; // fractional leftovers from spawn rate
+  }
+
+  spawnParticles(dt, cometPos){
+    const expected = this.config.generateRate * dt + this.spawnCarry;
+    const count = Math.floor(expected);
+    this.spawnCarry = expected - count;
+
+    for (let i=0; i<count; i++){
+      // start near comet
+      const jitter = scale3(
+        [Math.random()-0.5, Math.random()-0.5, Math.random()-0.5],
+        this.config.spawnJitter
+      );
+      const p = add3(cometPos, jitter);
+
+      // tail direction points roughly toward -Z
+      const baseDir = [0,0,-1];
+
+      // random direction in cone
+      const dir = randomDirInCone(baseDir, this.config.coneAngleDeg);
+
+      // random speed in [initSpeedMin, initSpeedMax]
+      const speed = this.config.initSpeedMin +
+        Math.random()*(this.config.initSpeedMax - this.config.initSpeedMin);
+
+      const v = scale3(dir, speed);
+
+      // lifetime random in [lifetimeMin, lifetimeMax]
+      const life = this.config.lifetimeMin +
+        Math.random()*(this.config.lifetimeMax - this.config.lifetimeMin);
+
+      const mass = 1.0;
+      const colorStart = this.config.baseColor.slice();
+
+      const prt = new Particle(p, v, life, mass, colorStart);
+      this.particles.push(prt);
+    }
+  }
+
+  update(dt){
+    const accel = this.config.accel;
+    const groundY = this.config.groundY;
+    const bounceDamping = this.config.bounceDamping;
+
+    for (let p of this.particles){
+      // apply acceleration
+      p.vel[0] += accel[0] * dt;
+      p.vel[1] += accel[1] * dt;
+      p.vel[2] += accel[2] * dt;
+
+      // integrate position
+      p.pos[0] += p.vel[0] * dt;
+      p.pos[1] += p.vel[1] * dt;
+      p.pos[2] += p.vel[2] * dt;
+
+      // ground collision / bounce logic (EXTRA CREDIT PART):
+      if (p.pos[1] < groundY) {
+        // clamp position to ground plane
+        p.pos[1] = groundY;
+
+        // flip vertical velocity and lose energy
+        // (like an inelastic bounce)
+        p.vel[1] = -p.vel[1] * bounceDamping;
+
+        // optional: apply a little horizontal friction so they calm down
+        p.vel[0] *= 0.9;
+        p.vel[2] *= 0.9;
+      }
+
+      // age the particle
+      p.age += dt;
+    }
+
+    // kill dead particles
+    this.particles = this.particles.filter(p => p.alive());
+  }
+
+  buildRenderArray(){
+    // pack per-particle data: [px,py,pz, r,g,b, alpha]
+    const arr = new Float32Array(this.particles.length * 7);
+    let idx = 0;
+    for (let p of this.particles){
+      const a = p.alpha();
+      arr[idx++] = p.pos[0];
+      arr[idx++] = p.pos[1];
+      arr[idx++] = p.pos[2];
+      arr[idx++] = p.colorStart[0];
+      arr[idx++] = p.colorStart[1];
+      arr[idx++] = p.colorStart[2];
+      arr[idx++] = a;
+    }
+    return arr;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 5. Minimal mat4 math (camera/projection)
+////////////////////////////////////////////////////////////////////////////////
+function mat4Multiply(a,b){
+  const out = new Float32Array(16);
+  for (let c=0;c<4;c++){
+    for (let r=0;r<4;r++){
+      out[c*4+r] =
+        a[0*4+r]*b[c*4+0] +
+        a[1*4+r]*b[c*4+1] +
+        a[2*4+r]*b[c*4+2] +
+        a[3*4+r]*b[c*4+3];
+    }
+  }
+  return out;
+}
+function mat4Identity(){
+  const m=new Float32Array(16);
+  m[0]=1;m[5]=1;m[10]=1;m[15]=1;
+  return m;
+}
+function mat4Perspective(fovyRad, aspect, near, far){
+  const f = 1.0 / Math.tan(fovyRad/2);
+  const out = new Float32Array(16);
+  out[0]  = f/aspect;
+  out[1]  = 0;
+  out[2]  = 0;
+  out[3]  = 0;
+
+  out[4]  = 0;
+  out[5]  = f;
+  out[6]  = 0;
+  out[7]  = 0;
+
+  out[8]  = 0;
+  out[9]  = 0;
+  out[10] = (far+near)/(near-far);
+  out[11] = -1;
+
+  out[12] = 0;
+  out[13] = 0;
+  out[14] = (2*far*near)/(near-far);
+  out[15] = 0;
+  return out;
+}
+function mat4LookAt(eye,center,upVec){
+  const fwd = norm3(sub3(center, eye));
+  let right = [
+    fwd[1]*upVec[2] - fwd[2]*upVec[1],
+    fwd[2]*upVec[0] - fwd[0]*upVec[2],
+    fwd[0]*upVec[1] - fwd[1]*upVec[0]
+  ];
+  right = norm3(right);
+  let up = [
+    right[1]*fwd[2] - right[2]*fwd[1],
+    right[2]*fwd[0] - right[0]*fwd[2],
+    right[0]*fwd[1] - right[1]*fwd[0]
+  ];
+
+  const out = new Float32Array(16);
+  out[0]= right[0]; out[4]= right[1]; out[8] = right[2]; out[12]=0;
+  out[1]= up[0];    out[5]= up[1];    out[9] = up[2];    out[13]=0;
+  out[2]=-fwd[0];   out[6]=-fwd[1];   out[10]=-fwd[2];   out[14]=0;
+  out[3]=0;         out[7]=0;         out[11]=0;         out[15]=1;
+
+  const trans = mat4Identity();
+  trans[12] = -eye[0];
+  trans[13] = -eye[1];
+  trans[14] = -eye[2];
+  return mat4Multiply(out, trans);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 6. WebGL setup
+////////////////////////////////////////////////////////////////////////////////
+const canvas = document.getElementById("glcanvas");
+const gl = canvas.getContext("webgl", {alpha:false});
+if (!gl) {
+  alert("WebGL not supported");
+}
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight - document.getElementById("ui").offsetHeight;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener("resize", resize);
+resize();
+
+function compileShader(gl, src, type){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s));
+    throw new Error("Shader compile failed");
+  }
+  return s;
+}
+function createProgram(gl, vsSrc, fsSrc){
+  const vs = compileShader(gl, vsSrc, gl.VERTEX_SHADER);
+  const fs = compileShader(gl, fsSrc, gl.FRAGMENT_SHADER);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error(gl.getProgramInfoLog(prog));
+    throw new Error("Program link failed");
+  }
+  return prog;
+}
+
+const vsSource = document.getElementById("vs").textContent;
+const fsSource = document.getElementById("fs").textContent;
+const program = createProgram(gl, vsSource, fsSource);
+
+const a_posLoc   = gl.getAttribLocation(program, "a_pos");
+const a_colorLoc = gl.getAttribLocation(program, "a_color");
+const a_alphaLoc = gl.getAttribLocation(program, "a_alpha");
+const u_viewProjLoc   = gl.getUniformLocation(program, "u_viewProj");
+const u_pointSizeLoc  = gl.getUniformLocation(program, "u_pointSize");
+
+const particleBuffer = gl.createBuffer();
+
+// additive blending so overlapping particles glow
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+
+// depth off so trail layers additively
+gl.disable(gl.DEPTH_TEST);
+
+////////////////////////////////////////////////////////////////////////////////
+// 7. Simulation state
+////////////////////////////////////////////////////////////////////////////////
+const pSystem = new ParticleSystem(CONFIG);
+let lastTime = performance.now()/1000.0;
+
+////////////////////////////////////////////////////////////////////////////////
+// 8. Render loop
+////////////////////////////////////////////////////////////////////////////////
+function frame(){
+  const now = performance.now()/1000.0;
+  const dt = now - lastTime;
+  lastTime = now;
+
+  // comet position from keyframes (leader motion)
+  const cometPos = getCometPos(now);
+
+  // spawn from comet
+  pSystem.spawnParticles(dt, cometPos);
+
+  // physics update + bounce
+  pSystem.update(dt);
+
+  // draw
+  drawScene(cometPos);
+
+  // update UI
+  document.getElementById("rateVal").textContent  = CONFIG.generateRate.toFixed(1);
+  document.getElementById("lifeVal").textContent  =
+    CONFIG.lifetimeMin.toFixed(1) + " - " + CONFIG.lifetimeMax.toFixed(1);
+  document.getElementById("coneVal").textContent  = CONFIG.coneAngleDeg.toFixed(1);
+  document.getElementById("gravVal").textContent  =
+    `[${CONFIG.accel[0].toFixed(1)}, ${CONFIG.accel[1].toFixed(1)}, ${CONFIG.accel[2].toFixed(1)}]`;
+  document.getElementById("countVal").textContent = pSystem.particles.length;
+
+  requestAnimationFrame(frame);
+}
+
+function drawScene(cometPos){
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  // simple camera for demo
+  const eye    = [0, 1, 12];   // lifted a bit up so you can see ground bounces
+  const center = [0, -1, 0];
+  const up     = [0, 1, 0];
+
+  const view = mat4LookAt(eye, center, up);
+  const proj = mat4Perspective(
+    50*Math.PI/180,
+    canvas.width/canvas.height,
+    0.1,
+    100.0
+  );
+  const viewProj = mat4Multiply(proj, view);
+
+  // push particle data to GPU
+  const pdata = pSystem.buildRenderArray();
+  gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, pdata, gl.DYNAMIC_DRAW);
+
+  const stride = 7 * 4; // 7 floats * 4 bytes
+
+  gl.useProgram(program);
+
+  gl.enableVertexAttribArray(a_posLoc);
+  gl.vertexAttribPointer(a_posLoc, 3, gl.FLOAT, false, stride, 0);
+
+  gl.enableVertexAttribArray(a_colorLoc);
+  gl.vertexAttribPointer(a_colorLoc, 3, gl.FLOAT, false, stride, 3*4);
+
+  gl.enableVertexAttribArray(a_alphaLoc);
+  gl.vertexAttribPointer(a_alphaLoc, 1, gl.FLOAT, false, stride, 6*4);
+
+  gl.uniformMatrix4fv(u_viewProjLoc, false, viewProj);
+  gl.uniform1f(u_pointSizeLoc, CONFIG.pointSize);
+
+  const numParticles = pdata.length / 7;
+  gl.drawArrays(gl.POINTS, 0, numParticles);
+
+  // draw comet head as a brighter point
+  if (cometPos){
+    const cometArray = new Float32Array([
+      cometPos[0], cometPos[1], cometPos[2],
+      0.4, 0.7, 1.0, // same blue-ish tone
+      1.0            // alpha
+    ]);
+    gl.bufferData(gl.ARRAY_BUFFER, cometArray, gl.DYNAMIC_DRAW);
+
+    gl.uniform1f(u_pointSizeLoc, CONFIG.pointSize * 1.5);
+
+    gl.vertexAttribPointer(a_posLoc,   3, gl.FLOAT, false, stride, 0);
+    gl.vertexAttribPointer(a_colorLoc, 3, gl.FLOAT, false, stride, 3*4);
+    gl.vertexAttribPointer(a_alphaLoc, 1, gl.FLOAT, false, stride, 6*4);
+
+    gl.drawArrays(gl.POINTS, 0, 1);
+  }
+
+  // OPTIONAL: you could also draw a simple "ground line" for reference
+  // by rendering a thin strip of particles or a manual line strip. Not required.
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
