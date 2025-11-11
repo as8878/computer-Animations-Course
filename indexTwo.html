@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BVH Viewer - Three.js</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; color: white; font-family: sans-serif; }
+    #controls {
+      position: absolute;
+      z-index: 1;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px;
+      top: 10px;
+      left: 10px;
+      border-radius: 5px;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <input type="file" id="bvhInput" accept=".bvh" />
+    <button id="playPauseBtn" disabled>Play</button>
+    <label>Speed:
+      <input type="range" id="speedSlider" min="0.1" max="2" step="0.1" value="1" />
+    </label>
+  </div>
+
+  <!-- Three.js & BVHLoader -->
+  <script src="https://unpkg.com/three@0.125.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.125.0/examples/js/loaders/BVHLoader.js"></script>
+
+  <script>
+    let scene, camera, renderer, mixer, clock;
+    let skeletonHelper = null;
+    let boneContainer = null;
+    let animationAction = null;
+    let speed = 1;
+
+    init();
+
+    function init() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        1,
+        2000
+      );
+      // Wide, front view – should see whole body
+      camera.position.set(0, 250, 400);
+      camera.lookAt(0, 120, 0);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+      dirLight.position.set(0, 200, 100).normalize();
+      scene.add(dirLight);
+
+      const ambient = new THREE.AmbientLight(0x404040);
+      scene.add(ambient);
+
+      const grid = new THREE.GridHelper(1000, 20, 0x444444, 0x222222);
+      scene.add(grid);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      clock = new THREE.Clock();
+
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (mixer) mixer.update(delta * speed);
+      renderer.render(scene, camera);
+    }
+
+    document.getElementById('bvhInput').addEventListener('change', function (event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const contents = e.target.result;
+
+        const loader = new THREE.BVHLoader();
+        const result = loader.parse(contents);   // { skeleton, clip }
+
+        // remove old helper / bones if any
+        if (skeletonHelper) scene.remove(skeletonHelper);
+        if (boneContainer) scene.remove(boneContainer);
+
+        const skeleton = result.skeleton;
+        const clip = result.clip;
+
+        // helper to draw the stick figure, built from root bone
+        skeletonHelper = new THREE.SkeletonHelper(skeleton.bones[0]);
+        skeletonHelper.skeleton = skeleton;  // allow mixer to find .bones
+        scene.add(skeletonHelper);
+
+        // container to hold bones in the scene graph
+        boneContainer = new THREE.Group();
+        boneContainer.add(skeleton.bones[0]);
+        scene.add(boneContainer);
+
+        // lift the whole character so legs aren’t cut off
+        const lift = 80; // tweak if you want higher/lower
+        boneContainer.position.y = lift;
+        skeletonHelper.position.y = lift;
+
+        // rotation order for BVH
+        const bones = skeleton.bones;
+        for (let i = 0; i < bones.length; i++) {
+          bones[i].rotation.order = 'ZXY';
+        }
+
+        // reasonable size
+        skeletonHelper.scale.set(1.0, 1.0, 1.0);
+
+        // Animate the helper (it has .skeleton.bones)
+        mixer = new THREE.AnimationMixer(skeletonHelper);
+        animationAction = mixer.clipAction(clip);
+        animationAction.reset().setEffectiveWeight(1.0).play();
+
+        document.getElementById('playPauseBtn').disabled = false;
+        document.getElementById('playPauseBtn').textContent = 'Pause';
+      };
+
+      reader.readAsText(file);
+    });
+
+    document.getElementById('playPauseBtn').addEventListener('click', function () {
+      if (!mixer || !animationAction) return;
+      animationAction.paused = !animationAction.paused;
+      this.textContent = animationAction.paused ? 'Play' : 'Pause';
+    });
+
+    document.getElementById('speedSlider').addEventListener('input', function () {
+      speed = parseFloat(this.value);
+    });
+
+    window.addEventListener('resize', function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
