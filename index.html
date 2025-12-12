@@ -1,174 +1,547 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
+  <title>Real-Time Emotion-Based Character Response in Unity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Assignment 0 – Ankit Singh (RIT ID: as8878)</title>
+  <meta
+    name="description"
+    content="Showcase of a Unity-based project where a 3D character reacts to human emotions detected from images."
+  />
+
+  <!-- Optional: Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+
   <style>
-    :root { --bg:#0f1115; --fg:#e5e7eb; --muted:#93a0b4; --card:#181b22; --accent:#7dd3fc; }
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    .wrap{max-width:920px;margin:40px auto;padding:0 16px}
-    .card{background:var(--card);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:24px}
-    h1{margin:0 0 6px;font-size:28px}
-    h2{margin:24px 0 12px;font-size:20px;color:var(--accent)}
-    .meta{color:var(--muted);margin-bottom:8px}
-    video,iframe{width:100%;max-width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
-    .note{color:var(--muted);font-size:14px;margin-top:8px}
-    .card + .card {margin-top: 24px; }
-    .video-buttons {
-      position: relative;
+    :root {
+      --bg: #050816;
+      --bg-elevated: #0f172a;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --text-main: #e5e7eb;
+      --text-soft: #9ca3af;
+      --border-soft: #1f2937;
+      --pill-bg: #111827;
+      --heading: #f9fafb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at top, #0b1220 0, #020617 45%, #020617 100%);
+      color: var(--text-main);
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    header {
       display: flex;
-      justify-content: flex-end;
-      margin-bottom: 10px;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--border-soft);
+      padding-bottom: 20px;
+    }
+
+    .title {
+      font-size: clamp(1.9rem, 4vw, 2.4rem);
+      font-weight: 700;
+      color: var(--heading);
+    }
+
+    .subtitle {
+      font-size: 0.98rem;
+      color: var(--text-soft);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .pill {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--pill-bg);
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--text-soft);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.4fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    section {
+      margin-bottom: 32px;
+    }
+
+    h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--heading);
+      margin: 0 0 10px;
+      display: flex;
+      align-items: center;
       gap: 8px;
     }
-    .video-buttons button {
-      background-color: #1f2937;
-      color: #e5e7eb;
-      border: 1px solid #4b5563;
-      padding: 8px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.3s ease;
+
+    h2 span.tag {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
     }
-    .video-buttons button:hover {
-      background-color: #2563eb;
-      color: white;
-      border-color: #2563eb;
+
+    .card {
+      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.15) 0, #020617 60%);
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      padding: 18px 18px 16px;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.7);
+    }
+
+    .card-soft {
+      background: rgba(15, 23, 42, 0.92);
+      border-radius: 16px;
+      border: 1px solid var(--border-soft);
+      padding: 16px 16px 14px;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.7);
+    }
+
+    .hero-video-wrapper {
+  width: 100%;
+  aspect-ratio: 16 / 9;      /* default */
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid #1e293b;
+}
+
+.hero-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;       /* keep full video visible */
+  background: #000;
+}
+
+
+    .hero-video-wrapper iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--text-soft);
+    }
+
+    .flowchart-img,
+    .character-img {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid #1f2937;
+      display: block;
+      background: #020617;
+      object-fit: contain;
+      max-height: 360px;
+    }
+
+    .side-note {
+      font-size: 0.85rem;
+      color: var(--text-soft);
+      margin-top: 8px;
+    }
+
+    ul {
+      padding-left: 18px;
+      margin: 6px 0 2px;
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    .two-col-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px 32px;
+    }
+
+    .footer {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      border-top: 1px solid var(--border-soft);
+      padding-top: 14px;
+      margin-top: 24px;
+      text-align: right;
+    }
+
+    .highlight {
+      color: var(--accent);
+      font-weight: 500;
     }
   </style>
 </head>
 <body>
-  <main class="wrap">
-
-    <!-- Assignment 0 -->
-    <section class="card">
-      <h1>Assignment 0: Animation Framework</h1>
-      <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
-
-      <h2>Video</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <source src="videoforass0.mp4" type="video/mp4" /> 
-        Your browser doesn’t support the video tag.
-      </video>
-    </section>
-
-    <!-- Assignment 1 -->
-    <section class="card">
-      <h1>Assignment 1: Keyframing</h1>
-      <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
-
-      <h2>Video</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <source src="videoforass1.mp4" type="video/mp4" /> 
-        Your browser doesn’t support the video tag.
-      </video>
-    </section>
-
-    <!-- Assignment 2 -->
-    <section class="card">
-      <h1>Assignment 2: Billiards</h1>
-      <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
-
-      <h2>Video</h2>
-
-      <div class="video-buttons">
-        <button onclick="prevVideo()">⟵</button>
-        <button onclick="nextVideo()">⟶</button>
+  <div class="page">
+    <header>
+      <div>
+        <div class="title">
+          Real-Time Emotion-Based Character Response in Unity
+        </div>
+        <div class="subtitle">
+          An interactive prototype where a 3D SpongeBob-style character changes its facial
+          expression automatically based on the emotion detected from a user’s face image.
+        </div>
       </div>
-
-      <div id="videoContainer">
-        <video controls preload="metadata" style="display: none;">
-          <source src="videoforass2a.mp4" type="video/mp4">
-        </video>
-        <video controls preload="metadata" style="display: none;">
-          <source src="videoforass2b.mp4" type="video/mp4">
-        </video>
-        <video controls preload="metadata" style="display: none;">
-          <source src="videoforass2c.mp4" type="video/mp4">
-        </video>
-        <video controls preload="metadata" style="display: none;">
-          <source src="videoforass2d.mp4" type="video/mp4">
-        </video>
+      <div class="meta">
+        <span class="pill">Ankit Ashok Kumar Singh</span>
+        <span class="pill">RIT &mdash; Computer Animation Project</span>
+        <span class="pill">Portfolio Showcase</span>
       </div>
-    </section>
+    </header>
 
-    <!-- Assignment 3 -->
-    <section class="card">
-      <h1>Assignment 3: Particle Systems</h1>
-      <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
+    <div class="layout">
+      <!-- LEFT COLUMN: Description + Flow + Details -->
+      <main>
+        <!-- GOAL: What you set out to do -->
+        <section class="card">
+          <h2>
+            <span class="tag">Goal</span>
+            What I Set Out to Do
+          </h2>
+          <p>
+            The goal of this project was to build a Unity-based interactive experience where a
+            <span class="highlight">3D character reacts to human emotions</span> in real time.
+            Instead of clicking buttons or selecting menus, the user provides an image of their
+            face, and the character
+            <span class="highlight">automatically adjusts its expression</span> based on the
+            detected mood &mdash; for example, happiness, sadness, anger, or surprise.
+          </p>
+          <p>
+            This prototype explores how digital characters can become more
+            <span class="highlight">emotionally responsive</span>, and how emotion recognition can
+            be used to drive facial animation inside a game engine.
+          </p>
+        </section>
 
-      <h2>Base Simulation</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <!-- normal comet tail video goes here -->
-        <source src="videoforass3a.mp4" type="video/mp4" />
-        Your browser doesn’t support the video tag.
-      </video>
+        <!-- ALGORITHMS: How you went about it -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Algorithms</span>
+            How I Went About It
+          </h2>
+          <p>
+            Conceptually, the system follows a simple but powerful pipeline:
+          </p>
+          <ol>
+            <li>
+              A <strong>face image</strong> is provided by the user as input.
+            </li>
+            <li>
+              An <strong>emotion classifier</strong> processes the image and predicts a label such
+              as <em>happy</em>, <em>sad</em>, or <em>angry</em>.
+            </li>
+            <li>
+              A mapping layer converts this label into a discrete
+              <code>ExpressionState</code> (Neutral, Smile, Sad, Frown).
+            </li>
+            <li>
+              The current <code>ExpressionState</code> is then smoothed over time so the character
+              does not flicker between emotions too quickly.
+            </li>
+          </ol>
+          <p>
+            In practice, this means the project uses:
+          </p>
+          <ul>
+            <li>
+              <strong>Classification logic</strong> to interpret the face as one of several
+              emotion categories.
+            </li>
+            <li>
+              A simple <strong>state machine</strong> where each emotion maps to a specific
+              animation state.
+            </li>
+            <li>
+              A bit of <strong>temporal smoothing</strong> so changes in expression feel natural
+              instead of abrupt.
+            </li>
+          </ul>
+        </section>
 
-      <h2>Extra Credit: Particle–World Interaction (Ground Bounce)</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <!-- ground bounce / collision demo goes here -->
-        <source src="videoforass3aextra.mp4" type="video/mp4" />
-        Your browser doesn’t support the video tag.
-      </video>
+        <!-- PIPELINE / FLOWCHART: How it works -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Pipeline</span>
+            System Flow & Data Path
+          </h2>
+          <p>
+            The interaction can be summarized in four main stages:
+          </p>
+          <ol>
+            <li><strong>Image Input</strong> &mdash; The user uploads a face image.</li>
+            <li>
+              <strong>Emotion Detection</strong> &mdash; The image is analyzed by an emotion
+              model that predicts a label.
+            </li>
+            <li>
+              <strong>Emotion Mapping</strong> &mdash; The label is converted into a Unity
+              <code>ExpressionState</code> enum.
+            </li>
+            <li>
+              <strong>Character Response</strong> &mdash; Unity’s Animator plays the matching
+              facial animation, and the UI updates to show the detected mood.
+            </li>
+          </ol>
+          <p>
+            In the flowchart (on the right), these stages are color-coded:
+          </p>
+          <ul class="two-col-list">
+            <li><strong style="color:#38bdf8;">Blue</strong> &mdash; Image Input</li>
+            <li><strong style="color:#22c55e;">Green</strong> &mdash; Emotion Detection</li>
+            <li><strong style="color:#eab308;">Yellow</strong> &mdash; Emotion Mapping</li>
+            <li><strong style="color:#a855f7;">Purple</strong> &mdash; Animation Control</li>
+          </ul>
+          <p class="side-note">
+            This modular design keeps the project flexible &mdash; the same pipeline could later
+            be driven by a live webcam feed or a different emotion model without changing the
+            overall structure.
+          </p>
+        </section>
 
+        <!-- IMPLEMENTATION: How you built it -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Implementation</span>
+            How I Built It
+          </h2>
+          <p>
+            The implementation combines <strong>Blender</strong> for asset creation and
+            <strong>Unity</strong> for interaction and animation:
+          </p>
+          <ul>
+            <li>
+              I created and rigged a <span class="highlight">SpongeBob-style 3D character</span>
+              in Blender, adding a simple skeleton so the face and body parts could move.
+            </li>
+            <li>
+              The character was <strong>exported as an <code>.fbx</code></strong> file and
+              imported into Unity.
+            </li>
+            <li>
+              In Unity, I authored several <strong>emotion-specific animation clips</strong>:
+              happy, sad, and frown-like poses and motions.
+            </li>
+            <li>
+              A <strong>Unity Animator state machine</strong> references these clips and uses an
+              integer parameter (<code>ExpressionStateInt</code>) to decide which one to play.
+            </li>
+            <li>
+              Custom <strong>C# scripts</strong> read the predicted emotion, update the
+              <code>ExpressionState</code>, drive the Animator parameter, and also update a small
+              UI icon to match the current mood.
+            </li>
+          </ul>
+          <p class="side-note">
+            Together, these pieces form a complete loop: from user image, to emotion detection,
+            to animation playback and visual feedback.
+          </p>
+        </section>
 
-    </section>
+        <!-- RESULTS: How it looked (screens) -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Results</span>
+            How It Looked in Practice
+          </h2>
+          <p>
+            In the final prototype, the character responds naturally when different images are
+            provided:
+          </p>
+          <ul>
+            <li>
+              A <strong>smiling</strong> input image makes the character light up with a
+              <strong>happy expression</strong> &mdash; raised cheeks and a friendly look.
+            </li>
+            <li>
+              An <strong>angry</strong> face causes the character to adopt a
+              <strong>grumpy frown</strong>, with sharper features.
+            </li>
+            <li>
+              A clearly <strong>sad</strong> input softens the character’s face, lowering the
+              gaze and creating a more droopy expression.
+            </li>
+          </ul>
+          <p>
+            These transitions happen automatically based on the detected emotion, without any
+            manual triggering during the demo. Screenshots and a full recorded video are provided
+            to show the system in action.
+          </p>
+        </section>
 
-    <section class="card">
-      <h1>Assignment 4: moCap Assignment</h1>
-      <div class="meta">Name: <strong>Ankit Singh</strong> &nbsp;•&nbsp; RIT ID: <strong>as8878</strong></div>
+        <!-- FUTURE WORK -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Future Work</span>
+            What’s Left to Be Done
+          </h2>
+          <p>
+            While this prototype focuses on images, there are several clear directions for future
+            extensions:
+          </p>
+          <ul>
+            <li>
+              Replacing static image upload with a <strong>real-time webcam feed</strong>, so the
+              character responds as the user’s expression changes live.
+            </li>
+            <li>
+              Adding <strong>video-based emotion tracking</strong> for smoother transitions and
+              fewer abrupt changes.
+            </li>
+            <li>
+              Incorporating <strong>audio emotion detection</strong> to combine facial cues with
+              tone of voice.
+            </li>
+            <li>
+              Extending responses beyond facial poses, so the character can
+              <strong>speak or gesture</strong> for a more immersive interaction.
+            </li>
+          </ul>
+          <p>
+            Overall, the project is a first step toward
+            <span class="highlight">emotionally aware virtual characters</span> that can be used
+            in games, education, or therapeutic applications.
+          </p>
+        </section>
+      </main>
 
-      <h2>Wave</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <!-- normal comet tail video goes here -->
-        <source src="videoforass4a.mp4" type="video/mp4" />
-        Your browser doesn’t support the video tag.
-      </video>
+      <!-- RIGHT COLUMN: Media, Flowchart, Tech Stack, Code -->
+      <aside>
+        <!-- Video -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Demo</span>
+            Project Video
+          </h2>
+            <!-- TODO: Replace the src with your actual YouTube embed link -->
+            <div class="hero-video-wrapper">
+            <video controls preload="metadata" style="width:100%; height:100%; object-fit:contain;">
+            <!-- If video is in same folder as index.html use src="demo.mp4" -->
+              <source src="videofinal.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+            </video>
+            </div>
+          <p class="side-note">
+            The video summarizes the goal, approach, implementation details, results, and future
+            work in a short presentation.
+          </p>
+        </section>
 
-      <h2>Sneak</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <!-- ground bounce / collision demo goes here -->
-        <source src="videoforass4c.mp4" type="video/mp4" />
-        Your browser doesn’t support the video tag.
-      </video>
-      <h2>Arms</h2>
-      <video controls preload="metadata" style="width:100%;max-width:920px;background:#000">
-        <!-- ground bounce / collision demo goes here -->
-        <source src="videoforass4b.mp4" type="video/mp4" />
-        Your browser doesn’t support the video tag.
-      </video>
+        <!-- Character Image -->
+        
 
+        <!-- Flowchart Image -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Diagram</span>
+            System Flowchart
+          </h2>
+          <!-- TODO: Replace src with your flowchart image path -->
+          <img
+            src="flowCHART.png"
+            alt="Colored flowchart showing Image Input → Emotion Detection → Emotion Mapping → Unity Animator → Character Response"
+            class="flowchart-img"
+          />
+          <p class="side-note">
+            A high-level view of the pipeline, from image input through emotion prediction and
+            state mapping, to the final animated character response.
+          </p>
+        </section>
 
-    </section>
+        <!-- Tech stack -->
+        <section class="card-soft">
+          <h2>
+            <span class="tag">Tech</span>
+            Tools &amp; Technologies
+          </h2>
+          <div class="badge-row">
+            <span class="badge">Unity</span>
+            <span class="badge">C#</span>
+            <span class="badge">Blender</span>
+            <span class="badge">FBX Workflow</span>
+            <span class="badge">Facial Animation</span>
+            <span class="badge">Animator State Machine</span>
+            <span class="badge">UI &amp; HUD</span>
+          </div>
+          <p class="side-note">
+            The emphasis of the implementation is on connecting emotion detection to animation
+            logic and state management inside Unity.
+          </p>
+        </section>
+      </aside>
+    </div>
 
-  </main>
+    <div class="footer">
+      &copy; <span id="year"></span> Ankit Ashok Kumar Singh &mdash; RIT
+    </div>
+  </div>
 
   <script>
-    // --- Assignment 2 video carousel logic ---
-    let currentVideo = 0;
-    const videos = document.querySelectorAll('#videoContainer video');
-
-    function showVideo(index) {
-      videos.forEach((vid, i) => {
-        vid.style.display = i === index ? 'block' : 'none';
-      });
-    }
-
-    function nextVideo() {
-      currentVideo = (currentVideo + 1) % videos.length;
-      showVideo(currentVideo);
-    }
-
-    function prevVideo() {
-      currentVideo = (currentVideo - 1 + videos.length) % videos.length;
-      showVideo(currentVideo);
-    }
-
-    // Initial setup for Assignment 2 section
-    showVideo(currentVideo);
+    // Just sets the year in the footer automatically
+    document.getElementById("year").textContent = new Date().getFullYear();
   </script>
-
 </body>
 </html>
